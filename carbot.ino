@@ -7,7 +7,8 @@
 Servo leftServo;
 Servo rightServo;
 
-int lastLeft, lastCent, lastRight;
+float leftSns, centSns, rightSns;
+bool onTrack;
 
 void setup() {
   Serial.begin(9600);
@@ -21,78 +22,73 @@ void setup() {
   pinMode(CENT_SNS, INPUT);
   pinMode(RIGHT_SNS, INPUT);
 
-  lastLeft = 0;
-  lastCent = 0;
-  lastRight = 0;
+  leftSns = 0.0;
+  centSns = 0.0;
+  rightSns = 0.0;
+  onTrack = true;
 }
 
 void loop() {
+  float snsScaler = 0.9f;
   int leftRead = digitalRead(LEFT_SNS);
   int centRead = digitalRead(CENT_SNS);
   int rightRead = digitalRead(RIGHT_SNS);
-
-  String leftSns = "Left Sns " + String(leftRead);
-  String centSns = ", Cent Sns " + String(centRead);
-  String rightSns = ", Right Sns " + String(rightRead);
-  Serial.print(leftSns + centSns + rightSns + "\n");
-
-  if (leftRead == 0 && centRead == 0 && rightRead == 0) {
-      leftRead = lastLeft;
-      centRead = lastCent;
-      rightRead = lastRight;
-  }
-
-  if (leftRead) {
-    sharpRight();
-    lastLeft = 1;
-    lastCent = 0;
-    lastRight = 0;
-  }
-  else if (centRead) {
-    forward();
-    lastLeft = 0;
-    lastCent = 1;
-    lastRight = 0;
-  }
-  else if (rightRead) {
-    easyLeft();
-    lastLeft = 0;
-    lastCent = 0;
-    lastRight = 1;
+  
+  String leftMsg = "Readout " + String(leftRead);
+  String centMsg = String(centRead);
+  String rightMsg = String(rightRead);
+  String snsMsg = leftMsg + centMsg + rightMsg + "; ";
+  
+  if ((leftRead == 0 && centRead == 0 && rightRead == 0) or (leftRead == 1 && centRead == 0 && rightRead == 1)) {
+    //if we are detecting a split or a wall, don't update SNS data 
+    onTrack = false;
+    snsScaler = 1.0f;
   }
   else {
-    // idle to give my head a break 
-    leftServo.write(90);
-    rightServo.write(90);
+    //average the last & current readout, weighted by 3 & 2, respectively 
+    leftSns = (leftSns * 3 + (float)leftRead * 2) / 5;
+    centSns = (centSns * 3 + (float)centRead * 2) / 5;
+    rightSns = (rightSns * 3 + (float)rightRead * 2) / 5;
+    onTrack = true;
   }
+
+  String leftMem = "Memory " + String(leftSns);
+  String centMem = String(centSns);
+  String rightMem = String(rightSns) + "; ";
+  String memMsg = leftMem + centMem + rightMem;
+
+  String revMsg = "";
+  // rev speed is proportional to last center sns readout  
+  float revs = 5 + 40 * centSns;
+
+  // basic idea is we get half throttle
+  float leftScale = (centSns * 2 + rightSns - leftSns) / 4;
+  float leftRev = 90 + 90 * smoothstep(0, 1, leftScale);
+  float rightScale = (centSns * 2 - rightSns + leftSns) / 4;
+  float rightRev = 90 - 90 * smoothstep(0, 1, rightScale);
+  leftServo.write(leftRev);
+  rightServo.write(rightRev);
+  
+  revMsg = "Revs L" + String(leftRev) + " Right " + String(rightRev);
+  Serial.print(snsMsg + memMsg + revMsg + "\n");
+  
+  //wash out old sns data 
+  leftSns *= snsScaler;
+  centSns *= snsScaler;
+  rightSns *= snsScaler;
 }
 
-void sharpLeft() {
-  leftServo.write(90);
-  rightServo.write(0);
-  Serial.print("Sharp left turn");
+float smoothstep(float edge0, float edge1, float x) {
+  // Scale, bias and saturate x to 0..1 range
+  x = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0); 
+  // Evaluate polynomial
+  return x * x * (3 - 2 * x);
 }
 
-void easyLeft() {
-  leftServo.write(95);
-  rightServo.write(0);
-  Serial.print("Easy left turn");
-}
-
-void forward() {
-  leftServo.write(110);
-  rightServo.write(70);
-  Serial.print("Straight forward, full speed");
-}
-
-void sharpRight() {
-  leftServo.write(145);
-  rightServo.write(80);
-  Serial.print("Sharp Right turn");
-}
-
-void easyRight() {
-  leftServo.write(180);
-  rightServo.write(80);
-  Serial.print("Easy Right turn");
+float clamp(float x, float lowerlimit, float upperlimit) {
+  if (x < lowerlimit)
+    x = lowerlimit;
+  if (x > upperlimit)
+    x = upperlimit;
+  return x;
 }
