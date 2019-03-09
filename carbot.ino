@@ -30,36 +30,42 @@ void setup() {
 }
 
 void loop() {
+  // read sns
   int leftRead = digitalRead(LEFT_SNS);
   int centRead = digitalRead(CENT_SNS);
   int rightRead = digitalRead(RIGHT_SNS);
-  
+
+  // original sns readout 
   String snsRead = String(leftRead) + String(centRead) + String(rightRead);
-  
+
+  // if we're off track ... 
   if (leftRead == 0 && centRead == 0 && rightRead == 0) 
   {
-    // if we're off track, buff up the last sns data
+    // we're only off course if we're veering off the left/right 
+    // drifting from the center is fine 
+    if (centLast == 0)
+      offCourse = true;
+    
+    // replace the current sns readout with last update's readout   
     leftRead = leftLast;
     centRead = centLast;
     rightRead = rightLast;
-    leftMem *= (float)leftLast;
-    centMem *= (float)centLast;
-    rightMem *= (float)rightLast;
-    offCourse = true;
+    // interpolate sns memory, buffing up any sns that has both a semi-strong memory state and a hit last update 
+    leftMem = smoothstep(0, 1, leftMem + 0.25 * leftRead);
+    centMem = smoothstep(0, 1, centMem + 0.25 * centRead);
+    rightMem = smoothstep(0, 1, rightMem + 0.25 * rightRead);
   } else {
-    leftMem = (smoothstep(0, 1, leftMem) * 4 + (float)leftRead) / 5;
-    centMem = (smoothstep(0, 1, centMem) * 4 + (float)centRead) / 5;
-    rightMem = (smoothstep(0, 1, rightMem) * 4 + (float)rightRead) / 5;
+    // interpolate sns memory 
+    leftMem = smoothstep(0, 1, leftMem * 0.8 + (float)leftRead * 0.2);
+    centMem = smoothstep(0, 1, centMem * 0.8 + (float)centRead * 0.2);
+    rightMem = smoothstep(0, 1, rightMem * 0.8 + rightRead * 0.2);
     offCourse = false;
   }
- 
+  
+  // print sns data 
   String snsTaken = "Readout " + snsRead + "->" + String(leftRead) + String(centRead) + String(rightRead) + "; ";
   String memMsg = "Memory " + String(leftMem) + "/" + String(centMem) + "/" + String(rightMem) + "; ";
   Serial.print(snsTaken + memMsg);
-  
-  // if we're STILL off track, reverse 
-  if (leftRead == 0 && centRead == 0 && rightRead == 0) 
-    Reverse();
   
   // steering block follows 
   if (leftRead == 0 && centRead == 1 && rightRead == 0) 
@@ -78,59 +84,63 @@ void loop() {
     else
       sharpRight();
   }
-    
+  
   if (leftRead == 1 && centRead == 1 && rightRead == 0) 
     sharpLeft();
   
   if (leftRead==0 && centRead==1 && rightRead==1)
     sharpRight();
-
+  
   if (leftRead==1 && centRead==0 && rightRead==1) 
-    trackFindLeft();
+    easyLeft();
+    //findTrackLeft();
   
   if (leftRead==1 && centRead==1 && rightRead==1) 
-    trackFindLeft();
+    easyLeft();
+    //findTrackLeft();
 
+  // store current sns data for next update 
   leftLast = leftRead;
   centLast = centRead;
   rightLast = rightRead;
-  
 }
 
 void sharpLeft() {
-  writeRevs(90, 0);
+  writeRevs(120 - 40 * leftMem, 0);
 }
 
 void easyLeft() {
-  float leftRevs = 100 + 15 * rightMem;
+  float leftRevs = 105 + 15 * rightMem;
   float rightRevs = 60 - 60 * leftMem;
   writeRevs(leftRevs, rightRevs);
 }
 
 void forward() {
-  float leftRevs = 150 + 60 * rightMem - 15 * leftMem;
-  float rightRevs = 30 - 60 * leftMem + 15 * rightMem;
+  float leftRevs = 140 + 40 * rightMem + 20 * centMem - 10 * leftMem;
+  float rightRevs = 40 - 40 * leftMem - 20 * centMem + 10 * rightMem;
   writeRevs(leftRevs, rightRevs);
 }
 
 void sharpRight() {
-  writeRevs(180, 85);
+  writeRevs(180, 60 + 40 * rightMem);
 }
 
-void trackFind() {
-  writeRevs(95, 60);
-}
-
-void trackFindLeft() {
-  writeRevs(135, 85);
-}
-void Reverse() {
-  writeRevs(80, 100);
-}
 void easyRight() {
   float leftRevs = 120 + 60 * rightMem;
-  float rightRevs = 80 - 15 * leftMem;
+  float rightRevs = 75 - 15 * leftMem;
   writeRevs(leftRevs, rightRevs);
+}
+
+void findTrackLeft() {
+  writeRevs(105, 60);
+}
+
+void findTrackRight() {
+  writeRevs(120, 75);
+}
+
+void reverse() {
+  writeRevs(80, 100);
 }
 
 void writeRevs(float L, float R) {
