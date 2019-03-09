@@ -8,9 +8,12 @@ Servo leftServo;
 Servo rightServo;
 
 float leftMem, centMem, rightMem;
+int leftLast, centLast, rightLast;
+bool offCourse;
 
 void setup() {
   Serial.begin(9600);
+  offCourse = false;
   
   leftServo.attach(LEFT_SERVO_PIN);
   leftServo.write(90);
@@ -30,41 +33,51 @@ void loop() {
   int leftRead = digitalRead(LEFT_SNS);
   int centRead = digitalRead(CENT_SNS);
   int rightRead = digitalRead(RIGHT_SNS);
-
+  
+  String snsRead = String(leftRead) + String(centRead) + String(rightRead);
+  
   if (leftRead == 0 && centRead == 0 && rightRead == 0) 
   {
     // if we're off track, buff up the last sns data
-    if (leftMem > 0.25) leftRead = 1;
-    if (centMem > 0.75) centRead = 1;
-    if (rightMem > 0.25) rightRead = 1;
+    leftRead = leftLast;
+    centRead = centLast;
+    rightRead = rightLast;
+    leftMem *= (float)leftLast;
+    centMem *= (float)centLast;
+    rightMem *= (float)rightLast;
+    offCourse = true;
   } else {
     leftMem = (smoothstep(0, 1, leftMem) * 4 + (float)leftRead) / 5;
     centMem = (smoothstep(0, 1, centMem) * 4 + (float)centRead) / 5;
     rightMem = (smoothstep(0, 1, rightMem) * 4 + (float)rightRead) / 5;
+    offCourse = false;
   }
+ 
+  String snsTaken = "Readout " + snsRead + "->" + String(leftRead) + String(centRead) + String(rightRead) + "; ";
+  String memMsg = "Memory " + String(leftMem) + "/" + String(centMem) + "/" + String(rightMem) + "; ";
+  Serial.print(snsTaken + memMsg);
   
-  String snsRead = ("Readout " + String(leftRead) + String(centRead) + String(rightRead) + "; ");
+  // if we're STILL off track, reverse 
+  if (leftRead == 0 && centRead == 0 && rightRead == 0) 
+    Reverse();
   
-  String leftMem = "Memory " + String(leftMem) + "/";
-  String centMem = String(centMem) + "/";
-  String rightMem = String(rightMem) + "; ";
-  String memMsg = leftMem + centMem + rightMem;
-  Serial.print(snsRead + memMsg);
-  
-  if (leftRead == 0 && centRead == 0 && rightRead == 0) {
-    // if we're STILL off track, reverse 
-    trackFind();
-  }
-
   // steering block follows 
   if (leftRead == 0 && centRead == 1 && rightRead == 0) 
     forward();
   
-  if (leftRead==1 && centRead==0 && rightRead==0) 
-    easyLeft();
-
-  if (leftRead==0 && centRead==0 && rightRead==1) 
-    easyRight();
+  if (leftRead==1 && centRead==0 && rightRead==0) {
+    if (!offCourse)
+      easyLeft();
+    else 
+      sharpLeft();
+  }
+  
+  if (leftRead==0 && centRead==0 && rightRead==1) { 
+    if (!offCourse)
+      easyRight();
+    else
+      sharpRight();
+  }
     
   if (leftRead == 1 && centRead == 1 && rightRead == 0) 
     sharpLeft();
@@ -77,6 +90,11 @@ void loop() {
   
   if (leftRead==1 && centRead==1 && rightRead==1) 
     trackFindLeft();
+
+  leftLast = leftRead;
+  centLast = centRead;
+  rightLast = rightRead;
+  
 }
 
 void sharpLeft() {
@@ -84,20 +102,21 @@ void sharpLeft() {
 }
 
 void easyLeft() {
-  float leftRevs = 95 + 10 * rightMem;
-  float rightRevs = 75 - 20 * leftMem;
+  float leftRevs = 100 + 15 * rightMem;
+  float rightRevs = 60 - 60 * leftMem;
   writeRevs(leftRevs, rightRevs);
 }
 
 void forward() {
-  float leftRevs = 100 + 20 * leftMem;
-  float rightRevs = 80 - 20 * rightMem;
+  float leftRevs = 150 + 60 * rightMem - 15 * leftMem;
+  float rightRevs = 30 - 60 * leftMem + 15 * rightMem;
   writeRevs(leftRevs, rightRevs);
 }
 
 void sharpRight() {
   writeRevs(180, 85);
 }
+
 void trackFind() {
   writeRevs(95, 60);
 }
@@ -109,8 +128,8 @@ void Reverse() {
   writeRevs(80, 100);
 }
 void easyRight() {
-  float leftRevs = 105 + 20 * rightMem;
-  float rightRevs = 85 - 10 * leftMem;
+  float leftRevs = 120 + 60 * rightMem;
+  float rightRevs = 80 - 15 * leftMem;
   writeRevs(leftRevs, rightRevs);
 }
 
