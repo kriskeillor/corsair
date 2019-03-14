@@ -64,6 +64,11 @@ void loop() {
   if (leftRead==1 && centRead==1 && rightRead==1) {
     trackFind();
   }
+  
+  //just added this to track last reads 
+  lastLeft = leftRead;
+  lastCent = centRead;
+  lastRight = rightRead;
 }
 
 void sharpLeft() {
